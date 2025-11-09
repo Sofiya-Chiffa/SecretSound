@@ -51,7 +51,28 @@ class AudioSteganography:
 
     def decode_audio(self, audio_path):
         """Декодирование секретного текста из аудиофайла"""
-        pass
+        try:
+            with wave.open(audio_path, 'rb') as audio:
+                frames = audio.readframes(audio.getnframes())
+            audio_array = np.frombuffer(frames, dtype=np.int16)
+            binary_text = ''
+            for sample in audio_array:
+                # Извлекаем младший бит
+                lsb = sample & 1
+                binary_text += str(lsb)
+                # Проверяем маркер конца сообщения
+                if len(binary_text) >= 16 and binary_text[-16:] == '1111111111111110':
+                    break
+            # Удаляем маркер конца
+            if binary_text.endswith('1111111111111110'):
+                binary_text = binary_text[:-16]
+            decoded_text = self.binary_to_text(binary_text)
+            print(f"Декодированное сообщение: {decoded_text}")
+            print(f"Размер декодированного сообщения: {len(decoded_text)} символов")
+            return decoded_text
+        except Exception as e:
+            print(f"Ошибка при декодировании: {e}")
+            return None
 
     def calculate_capacity(self, audio_path):
         """Расчет максимальной емкости аудиофайла для скрытия данных"""
