@@ -7,9 +7,47 @@ class AudioSteganography:
     def __init__(self):
         self.supported_formats = ['.wav']
 
+    def text_to_binary(self, text):
+        """Преобразование текста в бинарную строку"""
+        binary = ''.join(format(ord(char), '08b') for char in text)
+        return binary
+
+    def binary_to_text(self, binary):
+        """Преобразование бинарной строки в текст"""
+        text = ''
+        for i in range(0, len(binary), 8):
+            byte = binary[i:i + 8]
+            text += chr(int(byte, 2))
+        return text
+
     def encode_audio(self, audio_path, secret_text, output_path):
         """Кодирование секретного текста в аудиофайл"""
-        pass
+        try:
+            with wave.open(audio_path, 'rb') as audio:
+                params = audio.getparams()
+                frames = audio.readframes(audio.getnframes())
+            audio_array = np.frombuffer(frames, dtype=np.int16)
+            binary_text = self.text_to_binary(secret_text)
+            # Добавляем маркер конца сообщения
+            binary_text += '1111111111111110'
+            if len(binary_text) > len(audio_array):
+                raise ValueError("Текст слишком длинный для данного аудиофайла")
+            # Кодируем текст в LSB аудиоданных
+            encoded_audio = audio_array.copy()
+            for i in range(len(binary_text)):
+                # Заменяем младший бит
+                if binary_text[i] == '1':
+                    encoded_audio[i] = encoded_audio[i] | 1
+                else:
+                    encoded_audio[i] = encoded_audio[i] & ~1
+            with wave.open(output_path, 'wb') as output_audio:
+                output_audio.setparams(params)
+                output_audio.writeframes(encoded_audio.tobytes())
+            print(f"Сообщение успешно закодировано в {output_path}")
+            print(f"Размер исходного сообщения: {len(secret_text)} символов")
+            print(f"Использовано аудиосэмплов: {len(binary_text)}")
+        except Exception as e:
+            print(f"Ошибка при кодировании: {e}")
 
     def decode_audio(self, audio_path):
         """Декодирование секретного текста из аудиофайла"""
