@@ -1,12 +1,19 @@
 import wave
 import numpy as np
 import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import customtkinter as ctk
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 import secrets
 import base64
+
+# Настройка внешнего вида CustomTkinter
+ctk.set_appearance_mode("Dark")  # Режимы: "Light", "Dark", "System"
+ctk.set_default_color_theme("blue")  # Темы: "blue", "green", "dark-blue"
 
 
 class AudioSteganography:
@@ -45,8 +52,7 @@ class AudioSteganography:
             }
             return encoded_data
         except Exception as e:
-            print(f"Ошибка при шифровании: {e}")
-            return None
+            raise Exception(f"Ошибка при шифровании: {e}")
 
     def decrypt_aes(self, encrypted_data, password):
         """Дешифрование текста с использованием AES-256"""
@@ -72,8 +78,7 @@ class AudioSteganography:
             plaintext = decryptor.update(ciphertext) + decryptor.finalize()
             return plaintext.decode('utf-8')
         except Exception as e:
-            print(f"Ошибка при дешифровании: {e}")
-            return None
+            raise Exception(f"Ошибка при дешифровании: {e}")
 
     def encrypted_data_to_binary(self, encrypted_data):
         """Преобразование зашифрованных данных в бинарную строку"""
@@ -84,8 +89,7 @@ class AudioSteganography:
             binary = ''.join(format(ord(char), '08b') for char in data_string)
             return binary
         except Exception as e:
-            print(f"Ошибка при преобразовании в бинарный формат: {e}")
-            return None
+            raise Exception(f"Ошибка при преобразовании в бинарный формат: {e}")
 
     def binary_to_encrypted_data(self, binary_string):
         """Преобразование бинарной строки обратно в зашифрованные данные"""
@@ -107,10 +111,8 @@ class AudioSteganography:
                 'tag': parts[3]
             }
             return encrypted_data
-
         except Exception as e:
-            print(f"Ошибка при преобразовании из бинарного формата: {e}")
-            return None
+            raise Exception(f"Ошибка при преобразовании из бинарного формата: {e}")
 
     def text_to_binary(self, text):
         """Преобразование текста в бинарную строку"""
@@ -136,13 +138,9 @@ class AudioSteganography:
             # Шифруем текст если указан пароль
             if password:
                 encrypted_data = self.encrypt_aes(secret_text, password)
-                if not encrypted_data:
-                    raise ValueError("Ошибка при шифровании данных")
                 binary_text = self.encrypted_data_to_binary(encrypted_data)
-                print("Сообщение зашифровано с использованием AES-256")
             else:
                 binary_text = self.text_to_binary(secret_text)
-                print("Сообщение сохранено без шифрования")
             # Добавляем маркер конца сообщения
             binary_text += '1111111111111110'
             if len(binary_text) > len(audio_array):
@@ -158,12 +156,9 @@ class AudioSteganography:
             with wave.open(output_path, 'wb') as output_audio:
                 output_audio.setparams(params)
                 output_audio.writeframes(encoded_audio.tobytes())
-            print(f"Сообщение успешно закодировано в {output_path}")
-            print(f"Размер исходного сообщения: {len(secret_text)} символов")
-            print(f"Использовано аудиосэмплов: {len(binary_text)}")
-            print(f"Режим: {'Зашифровано' if password else 'Без шифрования'}")
+            return True, f"Сообщение успешно закодировано!\nФайл: {output_path}\nРежим: {'Зашифровано' if password else 'Без шифрования'}"
         except Exception as e:
-            print(f"Ошибка при кодировании: {e}")
+            return False, f"Ошибка при кодировании: {e}"
 
     def decode_audio(self, audio_path, password=None):
         """Декодирование секретного текста из аудиофайла"""
@@ -186,25 +181,16 @@ class AudioSteganography:
             if password:
                 try:
                     encrypted_data = self.binary_to_encrypted_data(binary_text)
-                    if encrypted_data:
-                        decoded_text = self.decrypt_aes(encrypted_data, password)
-                        if decoded_text:
-                            print("Сообщение успешно дешифровано")
-                            print(f"Декодированное сообщение: {decoded_text}")
-                            print(f"Размер декодированного сообщения: {len(decoded_text)} символов")
-                            return decoded_text
-                except Exception as e:
-                    print(f"Ошибка при дешифровании: {e}")
-                    print("Попытка декодировать как незашифрованное сообщение...")
+                    decoded_text = self.decrypt_aes(encrypted_data, password)
+                    return True, decoded_text, "Сообщение успешно дешифровано"
+                except Exception:
+                    # Если дешифрование не удалось, пробуем как обычный текст
+                    pass
             # Если дешифрование не удалось или пароль не указан, пробуем как обычный текст
             decoded_text = self.binary_to_text(binary_text)
-            print(f"Декодированное сообщение: {decoded_text}")
-            print(f"Размер декодированного сообщения: {len(decoded_text)} символов")
-            print("Режим: Без шифрования")
-            return decoded_text
+            return True, decoded_text, "Сообщение декодировано (без шифрования)"
         except Exception as e:
-            print(f"Ошибка при декодировании: {e}")
-            return None
+            return False, "", f"Ошибка при декодировании: {e}"
 
     def calculate_capacity(self, audio_path):
         """Расчет максимальной емкости аудиофайла для скрытия данных"""
@@ -219,7 +205,7 @@ class AudioSteganography:
             # Учитываем маркер конца (2 байта)
             usable_bytes = total_bytes - 2
             # Для зашифрованных данных емкость меньше из-за накладных расходов
-            encrypted_usable_bytes = (usable_bytes - 100) // 2  # Примерная оценка
+            encrypted_usable_bytes = (usable_bytes - 100) // 2
             capacity_info = {
                 'total_samples': len(audio_array),
                 'total_bits': total_bits,
@@ -230,71 +216,248 @@ class AudioSteganography:
                 'duration_seconds': len(audio_array) / params.framerate,
                 'channels': params.nchannels
             }
-            return capacity_info
+            return True, capacity_info
         except Exception as e:
-            print(f"Ошибка при расчете емкости: {e}")
-            return None
+            return False, f"Ошибка при расчете емкости: {e}"
 
 
-# Основная программа
-stego = AudioSteganography()
-while True:
-    print("\n=== Аудио стеганография LSB с AES-256 шифрованием ===")
-    print("1. Закодировать сообщение в аудио")
-    print("2. Декодировать сообщение из аудио")
-    print("3. Проверить емкость аудиофайла")
-    print("4. Выход")
-    choice = input("Выберите действие: ")
-    if choice == '1':
-        audio_path = input("Введите путь к исходному аудиофайлу (.wav): ")
-        if not os.path.exists(audio_path):
-            print("Файл не найден!")
-            continue
-        capacity = stego.calculate_capacity(audio_path)
-        if capacity:
-            print(f"\nИнформация о емкости:")
-            print(f"Максимальная длина незашифрованного сообщения: {capacity['usable_bytes']} символов")
-            print(f"Максимальная длина зашифрованного сообщения: ~{capacity['encrypted_usable_bytes']} символов")
-        secret_text = input("Введите текст для скрытия: ")
-        use_encryption = input("Использовать шифрование AES-256? (y/n): ").lower().strip()
-        password = None
-        if use_encryption == 'y':
-            password = input("Введите пароль для шифрования: ")
-            if len(password) < 8:
-                print("Предупреждение: рекомендуется использовать пароль длиной не менее 8 символов")
+class SteganographyGUI:
+    def __init__(self):
+        self.stego = AudioSteganography()
+        self.setup_gui()
 
-        output_path = input("Введите путь для сохранения закодированного аудио: ")
-        stego.encode_audio(audio_path, secret_text, output_path, password)
-    elif choice == '2':
-        audio_path = input("Введите путь к закодированному аудиофайлу: ")
+    def setup_gui(self):
+        # Создаем главное окно
+        self.root = ctk.CTk()
+        self.root.title("Аудио Стеганография с AES-256")
+        self.root.geometry("800x700")
+        # Создаем вкладки
+        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview.pack(padx=20, pady=20, fill="both", expand=True)
+        # Добавляем вкладки
+        self.tab_encode = self.tabview.add("Кодирование")
+        self.tab_decode = self.tabview.add("Декодирование")
+        self.tab_capacity = self.tabview.add("Анализ емкости")
+        self.setup_encode_tab()
+        self.setup_decode_tab()
+        self.setup_capacity_tab()
+
+    def setup_encode_tab(self):
+        # Вкладка кодирования
+        ctk.CTkLabel(self.tab_encode, text="Кодирование сообщения в аудио",
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        # Выбор аудиофайла
+        ctk.CTkLabel(self.tab_encode, text="Исходный аудиофайл:").pack(pady=5)
+        self.encode_audio_frame = ctk.CTkFrame(self.tab_encode)
+        self.encode_audio_frame.pack(pady=5, fill="x", padx=20)
+        self.encode_audio_path = ctk.CTkEntry(self.encode_audio_frame, placeholder_text="Выберите WAV файл...")
+        self.encode_audio_path.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+        ctk.CTkButton(self.encode_audio_frame, text="Обзор", width=80,
+                      command=self.browse_encode_audio).pack(side="right", padx=5, pady=5)
+        # Сообщение для скрытия
+        ctk.CTkLabel(self.tab_encode, text="Секретное сообщение:").pack(pady=5)
+        self.secret_message = ctk.CTkTextbox(self.tab_encode, height=100)
+        self.secret_message.pack(pady=5, fill="x", padx=20)
+        # Шифрование
+        self.encryption_var = ctk.BooleanVar()
+        self.encryption_check = ctk.CTkCheckBox(self.tab_encode, text="Использовать AES-256 шифрование",
+                                                variable=self.encryption_var)
+        self.encryption_check.pack(pady=10)
+        self.password_frame = ctk.CTkFrame(self.tab_encode)
+        self.password_frame.pack(pady=5, fill="x", padx=20)
+        ctk.CTkLabel(self.password_frame, text="Пароль:").pack(pady=5)
+        self.encode_password = ctk.CTkEntry(self.password_frame, placeholder_text="Введите пароль...", show="*")
+        self.encode_password.pack(pady=5, fill="x")
+        # Выходной файл
+        ctk.CTkLabel(self.tab_encode, text="Выходной файл:").pack(pady=5)
+        self.output_frame = ctk.CTkFrame(self.tab_encode)
+        self.output_frame.pack(pady=5, fill="x", padx=20)
+        self.output_path = ctk.CTkEntry(self.output_frame, placeholder_text="Выберите путь для сохранения...")
+        self.output_path.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+        ctk.CTkButton(self.output_frame, text="Обзор", width=80,
+                      command=self.browse_output_audio).pack(side="right", padx=5, pady=5)
+        # Кнопка кодирования
+        ctk.CTkButton(self.tab_encode, text="Закодировать сообщение",
+                      command=self.encode_message, height=40).pack(pady=20)
+        # Статус кодирования
+        self.encode_status = ctk.CTkTextbox(self.tab_encode, height=80, state="disabled")
+        self.encode_status.pack(pady=10, fill="x", padx=20)
+
+    def setup_decode_tab(self):
+        # Вкладка декодирования
+        ctk.CTkLabel(self.tab_decode, text="Декодирование сообщения из аудио",
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        # Выбор закодированного аудиофайла
+        ctk.CTkLabel(self.tab_decode, text="Закодированный аудиофайл:").pack(pady=5)
+        self.decode_audio_frame = ctk.CTkFrame(self.tab_decode)
+        self.decode_audio_frame.pack(pady=5, fill="x", padx=20)
+        self.decode_audio_path = ctk.CTkEntry(self.decode_audio_frame, placeholder_text="Выберите WAV файл...")
+        self.decode_audio_path.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+        ctk.CTkButton(self.decode_audio_frame, text="Обзор", width=80,
+                      command=self.browse_decode_audio).pack(side="right", padx=5, pady=5)
+        # Пароль для дешифрования
+        ctk.CTkLabel(self.tab_decode, text="Пароль (если сообщение зашифровано):").pack(pady=5)
+        self.decode_password = ctk.CTkEntry(self.tab_decode, placeholder_text="Введите пароль...", show="*")
+        self.decode_password.pack(pady=5, fill="x", padx=20)
+        # Кнопка декодирования
+        ctk.CTkButton(self.tab_decode, text="Декодировать сообщение",
+                      command=self.decode_message, height=40).pack(pady=20)
+        # Результат декодирования
+        ctk.CTkLabel(self.tab_decode, text="Декодированное сообщение:").pack(pady=5)
+        self.decoded_message = ctk.CTkTextbox(self.tab_decode, height=150)
+        self.decoded_message.pack(pady=5, fill="both", expand=True, padx=20)
+        # Статус декодирования
+        self.decode_status = ctk.CTkLabel(self.tab_decode, text="", text_color="gray")
+        self.decode_status.pack(pady=5)
+
+    def setup_capacity_tab(self):
+        # Вкладка анализа емкости
+        ctk.CTkLabel(self.tab_capacity, text="Анализ емкости аудиофайла",
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
+        # Выбор аудиофайла для анализа
+        ctk.CTkLabel(self.tab_capacity, text="Аудиофайл для анализа:").pack(pady=5)
+        self.capacity_audio_frame = ctk.CTkFrame(self.tab_capacity)
+        self.capacity_audio_frame.pack(pady=5, fill="x", padx=20)
+        self.capacity_audio_path = ctk.CTkEntry(self.capacity_audio_frame, placeholder_text="Выберите WAV файл...")
+        self.capacity_audio_path.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+        ctk.CTkButton(self.capacity_audio_frame, text="Обзор", width=80,
+                      command=self.browse_capacity_audio).pack(side="right", padx=5, pady=5)
+        # Кнопка анализа
+        ctk.CTkButton(self.tab_capacity, text="Проанализировать емкость",
+                      command=self.analyze_capacity, height=40).pack(pady=20)
+        # Результаты анализа
+        self.capacity_results = ctk.CTkTextbox(self.tab_capacity, height=300, state="disabled")
+        self.capacity_results.pack(pady=10, fill="both", expand=True, padx=20)
+
+    def browse_encode_audio(self):
+        filename = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav")])
+        if filename:
+            self.encode_audio_path.delete(0, "end")
+            self.encode_audio_path.insert(0, filename)
+
+    def browse_decode_audio(self):
+        filename = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav")])
+        if filename:
+            self.decode_audio_path.delete(0, "end")
+            self.decode_audio_path.insert(0, filename)
+
+    def browse_capacity_audio(self):
+        filename = filedialog.askopenfilename(filetypes=[("WAV files", "*.wav")])
+        if filename:
+            self.capacity_audio_path.delete(0, "end")
+            self.capacity_audio_path.insert(0, filename)
+
+    def browse_output_audio(self):
+        filename = filedialog.asksaveasfilename(defaultextension=".wav", filetypes=[("WAV files", "*.wav")])
+        if filename:
+            self.output_path.delete(0, "end")
+            self.output_path.insert(0, filename)
+
+    def encode_message(self):
+        audio_path = self.encode_audio_path.get()
+        secret_text = self.secret_message.get("1.0", "end-1c")
+        output_path = self.output_path.get()
+        if not audio_path or not secret_text or not output_path:
+            messagebox.showerror("Ошибка", "Заполните все поля!")
+            return
         if not os.path.exists(audio_path):
-            print("Файл не найден!")
-            continue
-        use_password = input("Сообщение зашифровано? (y/n): ").lower().strip()
-        password = None
-        if use_password == 'y':
-            password = input("Введите пароль для дешифрования: ")
-        decoded_text = stego.decode_audio(audio_path, password)
-        if decoded_text:
-            print(f"\nДекодированное сообщение: {decoded_text}")
-    elif choice == '3':
-        audio_path = input("Введите путь к аудиофайлу: ")
+            messagebox.showerror("Ошибка", "Исходный аудиофайл не найден!")
+            return
+        password = self.encode_password.get() if self.encryption_var.get() else None
+        if self.encryption_var.get() and not password:
+            messagebox.showerror("Ошибка", "Введите пароль для шифрования!")
+            return
+        try:
+            success, message = self.stego.encode_audio(audio_path, secret_text, output_path, password)
+            self.encode_status.configure(state="normal")
+            self.encode_status.delete("1.0", "end")
+            if success:
+                self.encode_status.insert("1.0", f"✓ УСПЕХ\n{message}")
+            else:
+                self.encode_status.insert("1.0", f"✗ ОШИБКА\n{message}")
+            self.encode_status.configure(state="disabled")
+        except Exception as e:
+            self.encode_status.configure(state="normal")
+            self.encode_status.delete("1.0", "end")
+            self.encode_status.insert("1.0", f"✗ ОШИБКА\n{str(e)}")
+            self.encode_status.configure(state="disabled")
+
+    def decode_message(self):
+        audio_path = self.decode_audio_path.get()
+        password = self.decode_password.get() or None
+        if not audio_path:
+            messagebox.showerror("Ошибка", "Выберите аудиофайл!")
+            return
         if not os.path.exists(audio_path):
-            print("Файл не найден!")
-            continue
-        capacity = stego.calculate_capacity(audio_path)
-        if capacity:
-            print(f"\nИнформация о емкости аудиофайла:")
-            print(f"Общее количество сэмплов: {capacity['total_samples']}")
-            print(f"Общая емкость (биты): {capacity['total_bits']}")
-            print(f"Общая емкость (байты): {capacity['total_bytes']}")
-            print(f"Полезная емкость для незашифрованных данных (символы): {capacity['usable_bytes']}")
-            print(f"Полезная емкость для зашифрованных данных (символы): ~{capacity['encrypted_usable_bytes']}")
-            print(f"Длительность аудио: {capacity['duration_seconds']:.2f} секунд")
-            print(f"Частота дискретизации: {capacity['sample_rate']} Гц")
-            print(f"Количество каналов: {capacity['channels']}")
-    elif choice == '4':
-        print("Выход из программы.")
-        break
-    else:
-        print("Неверный выбор!")
+            messagebox.showerror("Ошибка", "Аудиофайл не найден!")
+            return
+        try:
+            success, decoded_text, status_message = self.stego.decode_audio(audio_path, password)
+            self.decoded_message.delete("1.0", "end")
+            if success:
+                self.decoded_message.insert("1.0", decoded_text)
+                self.decode_status.configure(text=f"✓ {status_message}", text_color="green")
+            else:
+                self.decode_status.configure(text=f"✗ {status_message}", text_color="red")
+        except Exception as e:
+            self.decoded_message.delete("1.0", "end")
+            self.decode_status.configure(text=f"✗ Ошибка: {str(e)}", text_color="red")
+
+    def analyze_capacity(self):
+        audio_path = self.capacity_audio_path.get()
+        if not audio_path:
+            messagebox.showerror("Ошибка", "Выберите аудиофайл!")
+            return
+        if not os.path.exists(audio_path):
+            messagebox.showerror("Ошибка", "Аудиофайл не найден!")
+            return
+        try:
+            success, capacity_info = self.stego.calculate_capacity(audio_path)
+            self.capacity_results.configure(state="normal")
+            self.capacity_results.delete("1.0", "end")
+            if success:
+                info_text = f"""
+=== ИНФОРМАЦИЯ О ЕМКОСТИ АУДИОФАЙЛА ===
+
+Основные параметры:
+• Общее количество сэмплов: {capacity_info['total_samples']:,}
+• Длительность аудио: {capacity_info['duration_seconds']:.2f} секунд
+• Частота дискретизации: {capacity_info['sample_rate']} Гц
+• Количество каналов: {capacity_info['channels']}
+
+Емкость для стеганографии:
+• Общая емкость (биты): {capacity_info['total_bits']:,}
+• Общая емкость (байты): {capacity_info['total_bytes']:,}
+• Полезная емкость для незашифрованных данных: {capacity_info['usable_bytes']:,} символов
+• Полезная емкость для зашифрованных данных: ~{capacity_info['encrypted_usable_bytes']:,} символов
+
+Рекомендации:
+• Максимальная длина текстового сообщения: {capacity_info['usable_bytes']} символов
+• С учетом шифрования: ~{capacity_info['encrypted_usable_bytes']} символов
+"""
+                self.capacity_results.insert("1.0", info_text)
+            else:
+                self.capacity_results.insert("1.0", f"✗ ОШИБКА\n{capacity_info}")
+            self.capacity_results.configure(state="disabled")
+        except Exception as e:
+            self.capacity_results.configure(state="normal")
+            self.capacity_results.delete("1.0", "end")
+            self.capacity_results.insert("1.0", f"✗ ОШИБКА\n{str(e)}")
+            self.capacity_results.configure(state="disabled")
+
+    def run(self):
+        self.root.mainloop()
+
+
+if __name__ == "__main__":
+    # Установка необходимых библиотек
+    try:
+        import customtkinter
+        import cryptography
+        import numpy
+    except ImportError as e:
+        print("Установите необходимые библиотеки:")
+        print("pip install customtkinter cryptography numpy")
+        exit(1)
+    app = SteganographyGUI()
+    app.run()
